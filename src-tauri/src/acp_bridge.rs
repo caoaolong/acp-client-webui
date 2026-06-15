@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -11,6 +11,153 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const BRIDGE_TIMEOUT: Duration = Duration::from_secs(300);
+
+fn is_executable(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        path.is_file()
+    }
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let metadata = match path.metadata() {
+            Ok(m) => m,
+            Err(_) => return false,
+        };
+        if !metadata.is_file() {
+            return false;
+        }
+        let permissions = metadata.permissions();
+        permissions.mode() & 0o111 != 0
+    }
+}
+
+fn search_path(commands: &[&str]) -> Option<PathBuf> {
+    let path_var = std::env::var("PATH").ok()?;
+    #[cfg(windows)]
+    let separator = ';';
+    #[cfg(not(windows))]
+    let separator = ':';
+
+    for dir in path_var.split(separator) {
+        let dir = Path::new(dir);
+        for cmd in commands {
+            let path = dir.join(cmd);
+            if is_executable(&path) {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+fn common_install_paths(server_type: &str) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    let home_dir = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()
+        .map(PathBuf::from);
+
+    match server_type {
+        "cursor" => {
+            #[cfg(target_os = "macos")]
+            paths.push(PathBuf::from("/Applications/Cursor.app/Contents/MacOS/Cursor"));
+            #[cfg(target_os = "linux")]
+            {
+                paths.push(PathBuf::from("/usr/bin/cursor"));
+                paths.push(PathBuf::from("/opt/cursor/cursor"));
+                paths.push(PathBuf::from("/opt/Cursor/cursor"));
+                if let Some(home) = &home_dir {
+                    paths.push(home.join(".local/bin/cursor"));
+                    paths.push(home.join("AppImages/cursor"));
+                }
+            }
+            #[cfg(windows)]
+            {
+                paths.push(PathBuf::from("C:/Program Files/Cursor/Cursor.exe"));
+                paths.push(PathBuf::from("C:/Program Files (x86)/Cursor/Cursor.exe"));
+                if let Some(home) = &home_dir {
+                    paths.push(home.join("AppData/Local/Programs/cursor/Cursor.exe"));
+                    paths.push(home.join("AppData/Local/cursor/Cursor.exe"));
+                }
+            }
+        }
+        "opencode" => {
+            #[cfg(target_os = "macos")]
+            {
+                paths.push(PathBuf::from("/usr/local/bin/opencode"));
+                paths.push(PathBuf::from("/opt/homebrew/bin/opencode"));
+                if let Some(home) = &home_dir {
+                    paths.push(home.join(".local/bin/opencode"));
+                }
+            }
+            #[cfg(target_os = "linux")]
+            {
+                paths.push(PathBuf::from("/usr/local/bin/opencode"));
+                paths.push(PathBuf::from("/usr/bin/opencode"));
+                if let Some(home) = &home_dir {
+                    paths.push(home.join(".local/bin/opencode"));
+                    paths.push(home.join(".npm-global/bin/opencode"));
+                    paths.push(home.join("node_modules/.bin/opencode"));
+                }
+            }
+            #[cfg(windows)]
+            {
+                if let Some(home) = &home_dir {
+                    paths.push(home.join("AppData/Roaming/npm/opencode.cmd"));
+                    paths.push(home.join("AppData/Roaming/npm/opencode.exe"));
+                    paths.push(home.join("AppData/Local/npm/opencode.cmd"));
+                    paths.push(home.join("AppData/Local/npm/opencode.exe"));
+                }
+                paths.push(PathBuf::from("C:/Program Files/nodejs/opencode.cmd"));
+                paths.push(PathBuf::from("C:/Program Files/nodejs/opencode.exe"));
+            }
+        }
+        _ => {}
+    }
+
+    paths
+}
+
+#[tauri::command]
+pub fn detect_acp_server(server_type: String) -> Result<Option<String>, String> {
+    let commands: Vec<&str> = match server_type.as_str() {
+        "opencode" => {
+            #[cfg(windows)]
+            {
+                vec!["opencode.exe", "opencode.cmd", "opencode"]
+            }
+            #[cfg(not(windows))]
+            {
+                vec!["opencode"]
+            }
+        }
+        "cursor" => {
+            #[cfg(windows)]
+            {
+                vec!["Cursor.exe", "cursor.exe", "cursor"]
+            }
+            #[cfg(not(windows))]
+            {
+                vec!["cursor"]
+            }
+        }
+        "custom" => return Ok(None),
+        _ => return Err(format!("Unknown server type: {}", server_type)),
+    };
+
+    if let Some(path) = search_path(&commands) {
+        return Ok(Some(path.to_string_lossy().to_string()));
+    }
+
+    for path in common_install_paths(&server_type) {
+        if path.exists() {
+            return Ok(Some(path.to_string_lossy().to_string()));
+        }
+    }
+
+    Ok(None)
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

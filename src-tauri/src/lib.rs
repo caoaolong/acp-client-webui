@@ -26,6 +26,7 @@ pub fn run() {
             acp_bridge::acp_list_sessions,
             acp_bridge::acp_delete_session,
             acp_bridge::acp_permission_response,
+            acp_bridge::detect_acp_server,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

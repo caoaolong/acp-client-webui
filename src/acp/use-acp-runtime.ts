@@ -55,6 +55,10 @@ export type UseAcpRuntimeOptions = {
 const EMPTY_THREAD_STATE = createEmptyThreadState("__pending__");
 const NOOP_ON_NEW = () =>
   Promise.reject(new Error("ACP session is still initializing"));
+const EMPTY_PERMISSIONS: AcpPermissionRequest[] = [];
+const NOOP_REPLY_PERMISSION = async (_requestId: string, _optionId?: string) => {
+  throw new Error("ACP runtime is not ready yet");
+};
 
 type ThreadStore = {
   states: Map<string, AcpThreadState>;
@@ -342,25 +346,19 @@ export function useAcpRuntime(options: UseAcpRuntimeOptions = {}): AssistantRunt
 }
 
 export function useAcpPermissions() {
-  return useAuiState((state) => {
+  const pending = useAuiState((state) => {
     const extras = state.thread.extras as AcpRuntimeExtras | undefined;
-    if (!extras || !(ACP_RUNTIME_EXTRAS in extras)) {
-      return {
-        pending: [] as AcpPermissionRequest[],
-        reply: async () => {
-          throw new Error("ACP runtime is not ready yet");
-        },
-      };
-    }
-    return {
-      pending: extras.permissions,
-      reply: extras.replyPermission,
-    };
+    if (!extras || !(ACP_RUNTIME_EXTRAS in extras)) return EMPTY_PERMISSIONS;
+    return extras.permissions;
   });
+  const reply = useAuiState((state) => {
+    const extras = state.thread.extras as AcpRuntimeExtras | undefined;
+    if (!extras || !(ACP_RUNTIME_EXTRAS in extras)) return NOOP_REPLY_PERMISSION;
+    return extras.replyPermission;
+  });
+  return useMemo(() => ({ pending, reply }), [pending, reply]);
 }
 
 export function useAcpBridgeError() {
-  return useAuiState(() => ({
-    isTauri: isTauriRuntime(),
-  }));
+  return useMemo(() => ({ isTauri: isTauriRuntime() }), []);
 }
