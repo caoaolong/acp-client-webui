@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>欢迎使用 Vac Agent</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <main class="container">
+      <h1>欢迎使用 Vac Agent</h1>
+      <p class="subtitle">
+        这是一个由 deepagents 驱动的智能代理桌面应用。
+        前端基于 Tauri + Vite + TypeScript 构建。
+      </p>
+      <ul class="features">
+        <li>
+          <strong>智能代理</strong>
+          基于 LangChain 与 OpenAI 模型构建的对话能力。
+        </li>
+        <li>
+          <strong>虚拟 Shell</strong>
+          通过 VacShellBackend 在安全沙箱中执行命令。
+        </li>
+        <li>
+          <strong>技能扩展</strong>
+          支持从 <code>skills/</code> 目录加载自定义能力。
+        </li>
+        <li>
+          <strong>桌面应用</strong>
+          由 Tauri 提供原生窗口与 Rust 后端。
+        </li>
+      </ul>
+      <p class="footer">Powered by Vac Agent · Tauri Desktop Ready</p>
+    </main>
+  </body>
+</html>
