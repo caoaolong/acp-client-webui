@@ -1,0 +1,53 @@
+﻿{
+  "settings": {
+    "title": "设置",
+    "description": "配置应用偏好和 ACP 服务器。",
+    "modules": {
+      "servers": "服务器",
+      "language": "语言",
+      "appearance": "外观"
+    },
+    "servers": {
+      "title": "ACP 服务器",
+      "description": "管理 ACP 服务器可执行文件。选中的服务器将用于新会话。",
+      "name": "名称",
+      "executablePath": "可执行文件路径",
+      "arguments": "参数（空格分隔）",
+      "argumentsPlaceholder": "例如：acp --stdio",
+      "autoDetect": "自动检测",
+      "autoDetectAll": "全部自动检测",
+      "addCustom": "添加自定义服务器",
+      "remove": "删除服务器",
+      "select": "选择服务器",
+      "selected": "已选中",
+      "noServers": "尚未配置服务器，请在下方添加。",
+      "types": {
+        "qwen": "Qwen",
+        "opencode": "OpenCode",
+        "cursor": "Cursor",
+        "custom": "自定义"
+      }
+    },
+    "language": {
+      "title": "语言",
+      "description": "选择您偏好的显示语言。",
+      "system": "跟随系统",
+      "en": "English",
+      "zh": "中文"
+    },
+    "appearance": {
+      "title": "外观",
+      "description": "自定义应用的外观风格。",
+      "theme": "主题",
+      "themeSystem": "跟随系统",
+      "themeLight": "浅色",
+      "themeDark": "深色"
+    },
+    "done": "完成"
+  },
+  "app": {
+    "title": "ACP Client",
+    "subtitle": "ACP 客户端",
+    "noServer": "未选择服务器"
+  }
+}
