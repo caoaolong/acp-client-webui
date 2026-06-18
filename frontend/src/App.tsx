@@ -2,6 +2,7 @@
 import { useAcpRuntime } from "@/acp/use-acp-runtime";
 import { AcpPermissionDialog } from "@/components/acp-permission-dialog";
 import { AcpStatus } from "@/components/acp-status";
+import { PacketLogButton } from "@/components/packet-log-button";
 import { SettingsButton } from "@/components/settings-button";
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { Thread } from "@/components/thread";
@@ -39,7 +40,8 @@ function App() {
           <div className="flex-1 overflow-y-auto">
             <ThreadList />
           </div>
-          <div className="mt-3 border-t border-border pt-3">
+          <div className="mt-3 border-t border-border pt-3 flex flex-col gap-2">
+            <PacketLogButton />
             <SettingsButton />
           </div>
         </aside>

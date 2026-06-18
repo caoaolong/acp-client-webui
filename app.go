@@ -187,6 +187,17 @@ func (a *App) Start(params StartParams) (map[string]interface{}, error) {
 		})
 	}
 
+	client.OnRawMessage = func(m acp.RawMessage) {
+		var parsed interface{}
+		if err := json.Unmarshal(m.Raw, &parsed); err != nil {
+			parsed = string(m.Raw)
+		}
+		a.emitEvent("raw_message", map[string]interface{}{
+			"direction": m.Direction,
+			"raw":       parsed,
+		})
+	}
+
 	client.OnPermissionRequest = func(toolCallID, title string, options []acp.PermissionOption) string {
 		requestID := uuid.New().String()
 		ch := make(chan string, 1)

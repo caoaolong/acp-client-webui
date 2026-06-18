@@ -16,7 +16,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -31,6 +30,12 @@ type PermissionOption struct {
 	OptionID string
 	Name     string
 	Kind     string // allow_once | allow_always | reject_once | reject_always
+}
+
+// RawMessage 表示一条原始 JSON-RPC 消息及其方向。
+type RawMessage struct {
+	Direction string          `json:"direction"` // "send" | "recv"
+	Raw       json.RawMessage `json:"raw"`
 }
 
 // Client 是一个 ACP 客户端：把 OpenCode（或任何 ACP Agent）当作子进程启动，
@@ -52,6 +57,9 @@ type Client struct {
 	// OnPermissionRequest 在收到 Agent 的 session/request_permission 请求时被调用。
 	// 不设置的话默认拒绝所有权限请求。
 	OnPermissionRequest PermissionDecider
+
+	// OnRawMessage 在每次发送或接收 JSON-RPC 消息时被调用，用于调试/日志。
+	OnRawMessage func(RawMessage)
 
 	// LogMessages 为 true 时在 stderr 打印收发的 JSON-RPC 消息（默认开启，设 ACP_LOG=0 关闭）。
 	LogMessages bool
@@ -133,19 +141,15 @@ func (c *Client) readLoop() {
 	}
 }
 
-func (c *Client) logMsg(direction string, payload []byte) {
-	if !c.LogMessages {
-		return
-	}
-	log.Printf("[acp] %s %s", direction, strings.TrimSpace(string(payload)))
-}
-
 func (c *Client) handleLine(line []byte) {
-	c.logMsg("←", line)
+	if c.OnRawMessage != nil {
+		raw := make(json.RawMessage, len(line))
+		copy(raw, line)
+		c.OnRawMessage(RawMessage{Direction: "recv", Raw: raw})
+	}
 
 	var msg message
 	if err := json.Unmarshal(line, &msg); err != nil {
-		// Agent 不应该往 stdout 写非协议内容，但还是容错处理一下，避免直接崩溃。
 		log.Printf("收到无法解析的消息，已忽略: %s", string(line))
 		return
 	}
@@ -256,7 +260,11 @@ func (c *Client) writeMessage(v interface{}) error {
 	}
 	data = append(data, '\n')
 
-	c.logMsg("→", data[:len(data)-1])
+	if c.OnRawMessage != nil {
+		raw := make(json.RawMessage, len(data)-1)
+		copy(raw, data[:len(data)-1])
+		c.OnRawMessage(RawMessage{Direction: "send", Raw: raw})
+	}
 
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()

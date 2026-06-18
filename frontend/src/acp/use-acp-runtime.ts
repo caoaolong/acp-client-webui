@@ -33,6 +33,25 @@ import type {
   AcpThreadState,
 } from "./types";
 import { createEmptyThreadState } from "./types";
+import { logPacket, logMergedPacket } from "@/store/packet-log";
+import type { AcpBridgeEvent } from "./types";
+
+function getEventSummary(event: AcpBridgeEvent): string {
+  if (event.type !== "event") return event.type;
+  const data = event.data as Record<string, unknown> | undefined;
+  switch (event.event) {
+    case "session_update":
+      return `Session: ${String(data?.sessionId ?? "").slice(0, 8)}...`;
+    case "permission_request":
+      return `Request: ${String(data?.requestId ?? "").slice(0, 8)}...`;
+    case "agent_exit":
+      return "Agent process exited";
+    case "bridge_closed":
+      return "Bridge connection closed";
+    default:
+      return event.event;
+  }
+}
 
 const ACP_RUNTIME_EXTRAS = Symbol("acp-runtime-extras");
 
@@ -150,14 +169,17 @@ function useAcpThreadRuntime(
 
       store.setState(sessionId, (current) => appendUserMessage(current, text));
       store.setState(sessionId, (current) => beginAssistantResponse(current));
+      logPacket("request", "prompt", `Session: ${sessionId.slice(0, 8)}...`, { sessionId, text });
       try {
         const result = (await promptAcpSession(sessionId, text)) as {
           stopReason?: string;
         };
+        logPacket("response", "prompt_result", `Stop: ${result.stopReason ?? "unknown"}`, result);
         store.setState(sessionId, (current) =>
           finishAssistantResponse(current, result.stopReason),
         );
       } catch (error) {
+        logPacket("response", "prompt_error", error instanceof Error ? error.message : String(error), { error: error instanceof Error ? error.message : String(error) });
         store.setState(sessionId, (current) => ({
           ...finishAssistantResponse(current, "error"),
           error: error instanceof Error ? error.message : String(error),
@@ -167,6 +189,7 @@ function useAcpThreadRuntime(
     },
     onCancel: async () => {
       if (!sessionId) return;
+      logPacket("request", "cancel", `Session: ${sessionId.slice(0, 8)}...`, { sessionId });
       await cancelAcpSession(sessionId);
       store.setState(sessionId, (current) => ({
         ...current,
@@ -220,6 +243,7 @@ export function useAcpRuntime(
 
   const replyPermission = useCallback(
     async (requestId: string, optionId?: string) => {
+      logPacket("request", "permission_response", `Request: ${requestId.slice(0, 8)}...`, { requestId, optionId });
       await respondAcpPermission(requestId, optionId);
       setPermissions((current) =>
         current.filter((item) => item.requestId !== requestId),
@@ -238,21 +262,102 @@ export function useAcpRuntime(
 
     const boot = async () => {
       try {
+        logPacket("request", "ensure_bridge", "Ensure ACP bridge ready", {});
         await ensureAcpBridge();
+        logPacket("response", "ensure_bridge_ok", "Bridge ready", {});
+
+        logPacket("request", "start_agent", "Start ACP agent", {
+          cwd: options.cwd,
+          agentCommand: options.agentCommand,
+          agentArgs: options.agentArgs,
+        });
         await startAcpAgent({
           cwd: options.cwd,
           agentCommand: options.agentCommand,
           agentArgs: options.agentArgs,
         });
+        logPacket("response", "start_agent_ok", "Agent started", {});
         setReady(true);
         setBridgeError(null);
       } catch (error) {
-        setBridgeError(error instanceof Error ? error.message : String(error));
+        const msg = error instanceof Error ? error.message : String(error);
+        logPacket("response", "boot_error", msg, { error: msg });
+        setBridgeError(msg);
       }
     };
 
     void boot();
     unlisten = listenAcpEvents((event) => {
+      if (event.type === "event") {
+        const eventData = event.data as Record<string, unknown> | undefined;
+
+        if (event.event === "raw_message") {
+          const direction = eventData?.direction as string;
+          const raw = eventData?.raw as Record<string, unknown> | undefined;
+          if (raw) {
+            const method = raw.method as string | undefined;
+            const id = raw.id;
+            const hasResult = raw.result !== undefined;
+            const hasError = raw.error !== undefined;
+
+            const params = raw.params as Record<string, unknown> | undefined;
+            const update = params?.update as Record<string, unknown> | undefined;
+            const sessionUpdate = update?.sessionUpdate as string | undefined;
+            if (sessionUpdate === "agent_message_chunk") return;
+
+            let packetDir: "request" | "response" | "event";
+            let typeName: string;
+            let summary: string;
+
+            if (method && id !== undefined) {
+              packetDir = direction === "send" ? "request" : "event";
+              typeName = method;
+              summary = direction === "send" ? `→ ${method}` : `← ${method}`;
+            } else if (method) {
+              packetDir = "event";
+              typeName = method;
+              summary = direction === "send" ? `→ ${method}` : `← ${method}`;
+            } else if (id !== undefined && (hasResult || hasError)) {
+              packetDir = "response";
+              typeName = `response #${id}`;
+              const err = raw.error as Record<string, unknown> | undefined;
+              summary = err ? `← error: ${err.message}` : `← response #${id}`;
+            } else {
+              packetDir = "event";
+              typeName = "unknown";
+              summary = direction;
+            }
+
+            logPacket(packetDir, typeName, summary, raw);
+          }
+          return;
+        }
+
+        const sessionId = eventData?.sessionId as string | undefined;
+        const update = eventData?.update as Record<string, unknown> | undefined;
+        const sessionUpdate = update?.sessionUpdate as string | undefined;
+
+        if (sessionUpdate === "agent_message_chunk" && sessionId) {
+          const content = update?.content as Record<string, unknown> | undefined;
+          const chunkText = (content?.text as string) ?? "";
+          const mergeKey = `agent_message_chunk:${sessionId}`;
+          logMergedPacket(
+            mergeKey,
+            "event",
+            "agent_message_chunk",
+            `Session: ${sessionId.slice(0, 8)}...`,
+            event.data,
+            chunkText,
+          );
+        } else {
+          logPacket("event", event.event, getEventSummary(event), event.data);
+        }
+      } else if (event.type === "response") {
+        logPacket("response", `response_${event.id}`, event.error ?? "OK", event);
+      } else if (event.type === "ready") {
+        logPacket("event", "ready", "ACP bridge ready", event);
+      }
+
       if (event.type !== "event") return;
 
       if (event.event === "session_update") {
@@ -286,7 +391,9 @@ export function useAcpRuntime(
   const adapter = useMemo(
     () => ({
       list: async () => {
+        logPacket("request", "list_sessions", "List all sessions", {});
         const result = await listAcpSessions();
+        logPacket("response", "list_sessions_result", `${result.sessions.length} sessions`, result);
         return {
           threads: result.sessions.map((session) => ({
             status: "regular" as const,
@@ -297,7 +404,7 @@ export function useAcpRuntime(
         };
       },
       initialize: async () => {
-        // Retry logic to handle race condition where agent isn't ready yet
+        logPacket("request", "create_session", "Create new session", { cwd: options.cwd });
         let lastError: Error | null = null;
         for (let attempt = 0; attempt < 10; attempt++) {
           try {
@@ -305,6 +412,7 @@ export function useAcpRuntime(
               cwd: options.cwd,
               title: "New Chat",
             });
+            logPacket("response", "create_session_result", `Session: ${result.sessionId.slice(0, 8)}...`, result);
             store.states.set(
               result.sessionId,
               createEmptyThreadState(result.sessionId),
@@ -316,18 +424,16 @@ export function useAcpRuntime(
           } catch (error) {
             lastError =
               error instanceof Error ? error : new Error(String(error));
-            // If error is about agent not started, retry with backoff (except on last attempt)
             if (lastError.message.includes("ACP Agent 未启动") && attempt < 9) {
               await new Promise((resolve) =>
                 setTimeout(resolve, 200 * (attempt + 1)),
               );
               continue;
             }
-            // Either not agent error, or last attempt - throw immediately
+            logPacket("response", "create_session_error", lastError.message, { error: lastError.message });
             throw error;
           }
         }
-        // Should never reach here, but satisfy TypeScript
         throw (
           lastError || new Error("Unknown error during session initialization")
         );
@@ -336,6 +442,7 @@ export function useAcpRuntime(
       archive: async () => {},
       unarchive: async () => {},
       delete: async (remoteId: string) => {
+        logPacket("request", "delete_session", `Session: ${remoteId.slice(0, 8)}...`, { sessionId: remoteId });
         await deleteAcpSession(remoteId);
         store.states.delete(remoteId);
       },

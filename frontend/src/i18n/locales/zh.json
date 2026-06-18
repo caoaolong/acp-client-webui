@@ -45,6 +45,16 @@
     },
     "done": "完成"
   },
+  "packetLog": {
+    "title": "数据包日志",
+    "clear": "清空全部",
+    "empty": "暂无数据包记录",
+    "detail": "数据包详情",
+    "selectHint": "从左侧列表选择一个数据包查看详情",
+    "noSelection": "未选择数据包",
+    "mergedText": "合并文本",
+    "chunks": "个片段"
+  },
   "app": {
     "title": "ACP Client",
     "subtitle": "ACP 客户端",

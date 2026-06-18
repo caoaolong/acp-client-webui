@@ -33,7 +33,7 @@
       "description": "Choose your preferred display language.",
       "system": "System",
       "en": "English",
-      "zh": "涓枃"
+      "zh": "中文"
     },
     "appearance": {
       "title": "Appearance",
@@ -44,6 +44,16 @@
       "themeDark": "Dark"
     },
     "done": "Done"
+  },
+  "packetLog": {
+    "title": "Packet Log",
+    "clear": "Clear all",
+    "empty": "No packets recorded yet",
+    "detail": "Packet Detail",
+    "selectHint": "Select a packet from the list to view its details",
+    "noSelection": "No packet selected",
+    "mergedText": "Merged Text",
+    "chunks": "chunks"
   },
   "app": {
     "title": "Vac Agent",
